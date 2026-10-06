@@ -202,23 +202,36 @@ function done(r) {
 }
 
 // ---- 受付（カメラ → 机の受付ボード） ----
+// 読む順番：利用者カード →（借りる人は）ポール。ポールはカードを読んでから3分以内なら、その人に貸す。
+// ポールだけを読んだときは、貸出中なら返却になる。名前はこの画面に出さない。
+const LAST_CARD_MS = 180 * 1000;
+let lastCard = '', lastCardAt = 0;
+function setLastCard(c) { lastCard = c; lastCardAt = Date.now(); }
 function mainUketsuke() {
   $('app').innerHTML = `<header><b>受付（カメラ）</b><button id="btnOut">受付終了</button></header><div class="wrap">
     <div id="cam"><video id="video" playsinline muted></video><div class="guide"></div><div class="off" id="camoff">カメラを起動しています…</div></div>
-    <div id="msg">利用者カードを枠に入れてください<small>名前・ポール・行先は、机の画面で確かめます</small></div>
-    <div class="row"><input id="code" placeholder="番号を手で打つ（例 C0001）" autocomplete="off" autocapitalize="characters"><button class="g" id="btnGo">送る</button></div>
+    <div id="msg">① カード　②（借りる人は）ポール<small>の順に枠に入れてください。返すときはポールだけ</small></div>
+    <div class="row"><input id="code" placeholder="番号を手で打つ（例 C0001・P001）" autocomplete="off" autocapitalize="characters"><button class="g" id="btnGo">送る</button></div>
     <div id="log"></div></div>`;
-  $('btnOut').onclick = () => { saveToken(''); stopCamera(); pinView('受付を終了しました'); };
+  $('btnOut').onclick = () => { saveToken(''); stopCamera(); setLastCard(''); pinView('受付を終了しました'); };
   $('btnGo').onclick = () => { const v = $('code').value; $('code').value = ''; if (v.trim()) onCode(v, true); };
   $('code').onkeydown = e => { if (e.key === 'Enter') $('btnGo').click(); };
   startCamera();
 }
 async function handleUketsuke(code) {
   try {
+    if (/^P\d+$/.test(code)) {
+      const card = Date.now() - lastCardAt < LAST_CARD_MS ? lastCard : '';
+      const p = await api('boardPole', { card, pole: code });
+      if (p.kind === 'lent') { show('ok', `ポール ${esc(code)} を貸しました<small>${p.onBoard ? '机の画面に入りました' : '受付中に見当たらないため、貸出の記録だけ残しました'}</small>`); log(`${code} を貸出（${card}）`); beep(true); }
+      else if (p.kind === 'returned') { show('back', `ポール ${esc(code)} が返ってきました`); log(`${code} 返却`); beep(true); }
+      else { show('ng', esc(p.msg)); beep(false); }
+      return;
+    }
     const r = await api('queue', { code });
-    if (r.kind === 'queued' && !r.dup) { show('ok', `読めました（${esc(code)}）<small>机の画面で確かめてください（受付中 ${r.wait} 人）</small>`); log(`${code} を受付中へ`); beep(true); }
-    else if (r.kind === 'queued') { show('back', `${esc(code)} は、もう受付中に入っています`); beep(true); }
-    else if (r.kind === 'already') { show('back', `${esc(code)} は、今日の受付が終わっています`); beep(true); }
+    if (r.kind === 'queued' && !r.dup) { setLastCard(code); show('ok', `読めました（${esc(code)}）<small>借りる人は、続けてポールを読んでください（受付中 ${r.wait} 人）</small>`); log(`${code} を受付中へ`); beep(true); }
+    else if (r.kind === 'queued') { setLastCard(code); show('back', `${esc(code)} は、もう受付中に入っています<small>ポールを貸すなら、続けてポールを読んでください</small>`); beep(true); }
+    else if (r.kind === 'already') { setLastCard(''); show('back', `${esc(code)} は、今日の受付が終わっています`); beep(true); }
     else if (r.kind === 'newcard') { queue.length = 0; beep(true); newCardView(r.card); }
     else { show('ng', esc(r.msg)); beep(false); }
   } catch (e) {
