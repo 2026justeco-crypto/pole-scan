@@ -7,6 +7,8 @@
 const API = 'https://script.google.com/macros/s/AKfycbzJQusF-uUzLrn8ASz1siqqwsW17gMjT6rfE2vd-7UvN6h3TatKkfa9GX1eAd49z6Ox/exec';
 const PIN_LEN = 6;
 const SAME_CODE_MS = 3000;   // 同じ番号は、最後に映ってから3秒たつまで読み直さない
+// ?m=uketsuke で開くと「受付」の画面。読んだカードを机の受付ボード（スプレッドシート）に送るだけで、名前はこの画面に出さない
+const UKETSUKE = new URLSearchParams(location.search).get('m') === 'uketsuke';
 
 let token = '', member = null, pinBuf = '', reader = null, lastCode = '', lastAt = 0, idleTimer = null;
 const queue = [];
@@ -59,7 +61,7 @@ function beep(ok) {
 
 // ---- 暗証番号 ----
 function pinView(msg) {
-  $('app').innerHTML = `<header><b>ポール貸出（カメラ）</b></header><div class="wrap">
+  $('app').innerHTML = `<header><b>${UKETSUKE ? '受付（カメラ）' : 'ポール貸出（カメラ）'}</b></header><div class="wrap">
     <div id="msg">受付係の暗証番号（${PIN_LEN}桁）<br>${esc(pinBuf.padEnd(PIN_LEN, '・'))}</div>
     <div style="color:#b00020;text-align:center;margin-top:6px">${esc(msg || '')}</div>
     <div class="pad" id="pad"></div></div>`;
@@ -104,6 +106,7 @@ function onCode(code, typed) {
 
 // ---- 貸出・返却 ----
 function main() {
+  if (UKETSUKE) return mainUketsuke();
   $('app').innerHTML = `<header><b>ポール貸出・返却</b><button id="btnList">まだ返っていない一覧</button></header><div class="wrap">
     <div id="cam"><video id="video" playsinline muted></video><div class="guide"></div><div class="off" id="camoff">カメラを起動しています…</div></div>
     <div id="msg">利用者カードか、ポールを枠に入れてください</div>
@@ -140,6 +143,7 @@ async function work() {
   working = false;
 }
 async function handle(code) {
+  if (UKETSUKE) return handleUketsuke(code);
   try {
     const r = await api('scan', { code, member: member ? member.id : '' });
     if (r.kind === 'member') { setMember(r); show('ok', `${esc(r.name)} さん<small>続けてポールを読んでください</small>`); beep(true); }
@@ -189,11 +193,37 @@ function newCardView(card) {
   };
 }
 function done(r) {
+  if (UKETSUKE) { main(); log(`カード ${r.card} をひも付け`); return handleUketsuke(r.card); }
   member = { id: r.id, name: r.name, card: r.card, poles: r.poles };
   main();
   show('ok', `${esc(r.card)} を ${esc(r.name)} さんにひも付けました<small>${r.old ? '前のカード ' + esc(r.old) + ' は使えなくなりました。' : ''}続けてポールを読んでください</small>`);
   log(`カード ${r.card} → ${r.name}`);
   beep(true);
+}
+
+// ---- 受付（カメラ → 机の受付ボード） ----
+function mainUketsuke() {
+  $('app').innerHTML = `<header><b>受付（カメラ）</b><button id="btnOut">受付終了</button></header><div class="wrap">
+    <div id="cam"><video id="video" playsinline muted></video><div class="guide"></div><div class="off" id="camoff">カメラを起動しています…</div></div>
+    <div id="msg">利用者カードを枠に入れてください<small>名前・ポール・行先は、机の画面で確かめます</small></div>
+    <div class="row"><input id="code" placeholder="番号を手で打つ（例 C0001）" autocomplete="off" autocapitalize="characters"><button class="g" id="btnGo">送る</button></div>
+    <div id="log"></div></div>`;
+  $('btnOut').onclick = () => { saveToken(''); stopCamera(); pinView('受付を終了しました'); };
+  $('btnGo').onclick = () => { const v = $('code').value; $('code').value = ''; if (v.trim()) onCode(v, true); };
+  $('code').onkeydown = e => { if (e.key === 'Enter') $('btnGo').click(); };
+  startCamera();
+}
+async function handleUketsuke(code) {
+  try {
+    const r = await api('queue', { code });
+    if (r.kind === 'queued' && !r.dup) { show('ok', `読めました（${esc(code)}）<small>机の画面で確かめてください（受付中 ${r.wait} 人）</small>`); log(`${code} を受付中へ`); beep(true); }
+    else if (r.kind === 'queued') { show('back', `${esc(code)} は、もう受付中に入っています`); beep(true); }
+    else if (r.kind === 'already') { show('back', `${esc(code)} は、今日の受付が終わっています`); beep(true); }
+    else if (r.kind === 'newcard') { queue.length = 0; beep(true); newCardView(r.card); }
+    else { show('ng', esc(r.msg)); beep(false); }
+  } catch (e) {
+    if (!/暗証番号/.test(e.message)) { show('ng', `送れませんでした（${esc(code)}）<small>電波を確認して、もう一度読んでください</small>`); beep(false); }
+  }
 }
 
 // ---- まだ返っていない一覧 ----
