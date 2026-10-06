@@ -111,7 +111,7 @@ function main() {
     <div id="cam"><video id="video" playsinline muted></video><div class="guide"></div><div class="off" id="camoff">カメラを起動しています…</div></div>
     <div id="msg">利用者カードか、ポールを枠に入れてください</div>
     <div class="box" id="who" style="display:none"><div style="display:flex;justify-content:space-between;align-items:center"><div class="n" id="wn"></div><button class="s" id="btnDone">終わり</button></div><div class="p" id="wp"></div></div>
-    <div class="row"><input id="code" placeholder="番号を手で打つ（例 C0001・P001）" autocomplete="off" autocapitalize="characters"><button class="g" id="btnGo">送る</button></div>
+    <div class="row"><input id="code" placeholder="番号を手で打つ（例 C0001・E0012・P001）" autocomplete="off" autocapitalize="characters"><button class="g" id="btnGo">送る</button></div>
     <div id="log"></div></div>`;
   $('btnList').onclick = listView;
   $('btnDone').onclick = clearMember;
@@ -210,7 +210,7 @@ function setLastCard(c) { lastCard = c; lastCardAt = Date.now(); }
 function mainUketsuke() {
   $('app').innerHTML = `<header><b>受付（カメラ）</b><button id="btnOut">受付終了</button></header><div class="wrap">
     <div id="cam"><video id="video" playsinline muted></video><div class="guide"></div><div class="off" id="camoff">カメラを起動しています…</div></div>
-    <div id="msg">① カード　②（借りる人は）ポール<small>の順に枠に入れてください。返すときはポールだけ</small></div>
+    <div id="msg">① カード（またはメールのバーコード）<br>②（借りる人は）ポール<small>の順に枠に入れてください。返すときはポールだけ</small></div>
     <div class="row"><input id="code" placeholder="番号を手で打つ（例 C0001・P001）" autocomplete="off" autocapitalize="characters"><button class="g" id="btnGo">送る</button></div>
     <div id="log"></div></div>`;
   $('btnOut').onclick = () => { saveToken(''); stopCamera(); setLastCard(''); pinView('受付を終了しました'); };
